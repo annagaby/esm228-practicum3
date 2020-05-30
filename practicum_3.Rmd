@@ -213,17 +213,17 @@ abline(v=5.5, lwd=3, col="red")
 
 ##modify_design()
 
-That's not enough power. Let's increase the sample size.
+That's a lot of power. Let's decrease the sample size to see if we can do a smaller evaluation
 
 ```{r more-sample, echo=TRUE}
-sampling2 <- declare_sampling(n=300)
+sampling2 <- declare_sampling(clusters = community, n=50)
 design2 <- population + potential_outcomes + sampling2 +
           assigning + revealing + estimand + dim + did
 ```
 
 ##diagnose_design()
 
-Diagnosing the design with twice the sample size
+Diagnosing the design with a lower sample size
 
 ```{r diagnosis2}
 diagnosis2 <- diagnose_design(design2, sims=5000)
