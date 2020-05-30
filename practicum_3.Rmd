@@ -1,0 +1,242 @@
+---
+title: "Practicum 3"
+author: "Eleonore Durand"
+date: "May 29, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+#load necessary packages
+
+library(DeclareDesign)
+library(knitr)
+library(ggplot2)
+library(kableExtra)
+library(dplyr)
+library(truncnorm) #for truncated distribution
+
+```
+
+
+##declare_population()
+
+This functions allows you to declare the characteristics of the population that you want to study.
+
+```{r population, echo=TRUE}
+set.seed(228)
+population <- declare_population(
+  community = add_level(N=500),
+  household = add_level(N=30,
+            tree_cover_ha=rtruncnorm(n=N, a=1, b=40, #household have an average of 200 ha of tree cover, with a sd of 180
+                            mean=18, sd=8),
+    u=rnorm(n=N, mean=-10, sd=10)) #control group loses on average 10 ha of tree cover to deforestation
+)
+
+#using DeclareDesign, we are simulating a population of 500 communities (our unit of analysis) each of which has a differenct level of tree-cover, measured in hectares, and a different amount of variability in that tree cover (the variable 'u'). 
+```
+
+
+
+
+##Population descriptives
+
+```{r population-see, echo=TRUE, fig.height=5.5}
+pop <- population()
+hist(pop[,2], xlab="Baseline Forest Cover (ha)", 
+     main="Baseline", cex=24)
+```
+
+##declare_potential_outcomes()
+
+The next step is to declare the full schedule of potential outcomes $Y(1)$ and $Y(0)$ under an assumption about the effect size of interest.
+
+
+
+```{r po, echo=TRUE}
+potential_outcomes <- 
+  declare_potential_outcomes(
+    Y_D_0=tree_cover_ha + u,
+    Y_D_1=tree_cover_ha + u + 2)
+
+
+#we are setting the minimum treatment effect to 2, which is about a 20% difference
+
+```
+
+
+##Potential outcomes descriptives
+
+```{r po-see, echo=TRUE}
+po <- potential_outcomes(pop)
+kable(po[1:5,], digits=1)
+
+#PH: spot check that our definition of the unit-level treatment effect is true (subtract column 4 from column 5).
+```
+
+
+##declare_sampling()
+
+Next, we want to select the sample size. Let's start with 100 communities 
+
+```{r sample, echo=TRUE}
+sampling <- declare_sampling(clusters = community, n=100)
+sam <- sampling(po)
+kable(sam[1:5,c(1:2,4:6)], row.names = FALSE,
+      digits = 1)
+```
+
+
+##declare_assignment()
+
+This step declares the random assignment process. There are many complexities, but let's stick to *complete assignment* of exactly half the units at this stage.
+
+```{r assign, echo=TRUE}
+assigning <- declare_assignment(prob = 1/2, clusters = community ,
+                  assignment_variable="D")
+assigned <- assigning(sam)
+kable(assigned[1:5,c(1:2,4:5,7:8)], 
+      digits = 1)
+
+#PH: alright, now we're using DeclareDesign to randomly assign villages to treatment and control with a probability of 0.5. The variable 'm' denotes the number of units that declare_assignment() should place in each treatment condition, which we are asking to be equal to half of the sample per treatment condition (nrow(sam)/2).
+
+```
+
+
+## Assessing balance
+
+At this stage, it's possible to look at balance in the baseline tree cover characteristics, since random assignment has occured.
+
+```{r violin, echo=FALSE, fig.height=6}
+ggplot(data=assigned, aes(x=as.factor(D), y=tree_cover_ha)) +
+geom_violin(aes(fill=as.factor(D), color=as.factor(D))) +
+theme_minimal(base_size = 24) + xlab("Assignment")
+
+#PH: recall that random assignment should, in expectation, produce treatment and control groups that are statistically-identical on all observed and unobserved features.
+```
+
+##declare_reveal()
+
+This step declares how the potential outcomes are revealed by the random assignment
+
+```{r reveal, echo=TRUE}
+revealing <- declare_reveal(assignment_variables=D)
+#PH: this part of DeclareDesign essentially is telling R which PO to reveal for each unit as a function of its treatment assignment. Recall that we calculated the full schedule of potential outcomes for each unit above.
+```
+
+##declare_estimand()
+
+At this stage, we specify our target *estimand*, which is the quantity that we are trying to recover when estimating impact. Recall that we set this value to **5** in line with Jayachandran et al. (2017).
+
+```{r estimand, echo=TRUE}
+estimand <- declare_estimand(ATE = 2) # set ATE to 5 because that's the minimum effect we want to see 
+estimand(po)
+```
+
+
+##declare_estimator()
+
+Next, we declare the estimators we use for recovering the estimand. While there are many advanced estimators, we'll focus on the two core experimental estimators:
+1. difference-in-means
+2. difference-in-differences
+
+```{r estimator, echo=TRUE}
+dim <- declare_estimator(Y ~ D, estimand = estimand,  
+          model =  difference_in_means, label = "DIM") #PH: Difference-in-means (Mean of treatment group - mean of control group)
+
+did <- declare_estimator(Y - tree_cover_ha ~ D, 
+                         estimand = estimand,  
+          model =  difference_in_means, label = "DID") #PH: Difference-in-differences ([Mean of treatment group @ endline - Mean of treatment group @ baseline] - [Mean of control group @ endline - mean of control group @ baseline])
+```
+
+
+##declare_design()
+
+This function brings all of the parts of the process together in a single design and allows for each part of the design to be simulated repeatedly.
+
+```{r design, echo=TRUE}
+design <- population + potential_outcomes + sampling +
+          assigning + revealing + estimand + dim + did
+```
+
+
+##diagnose_design()
+
+At this stage, we can calculate various features of the design that we have specified
+
+```{r diagnosis, cache=TRUE}
+diagnosis <- diagnose_design(design, sims=5000)
+diagnosis$diagnosands_df[,c(1,3,5,9,11)] %>%
+  kable()
+```
+
+
+## Looking under the hood, DIM
+
+```{r underhood-dim, height=6}
+sim.out <- diagnosis$simulations
+hist(sim.out$estimate[sim.out$estimator_label=="DIM"],
+     main="Randomization Distribution",
+     xlab="Estimates in Realized Experiments",
+     xlim=c(-60,70), cex=24)
+abline(v=5.5, lwd=3, col="red", add=T)
+```
+
+## Looking under the hood, DID
+
+```{r underhood-did, height=6}
+sim.out <- diagnosis$simulations
+hist(sim.out$estimate[sim.out$estimator_label=="DID"],
+     main="Randomization Distribution",
+     xlab="Estimates in Realized Experiments",
+     xlim=c(-60,70), cex=24)
+abline(v=5.5, lwd=3, col="red")
+
+#PH: note that we get more power using the difference in differences estimation. This is because diff-in-diff increases the precision of our estimate of the ATE.
+```
+
+##modify_design()
+
+That's not enough power. Let's increase the sample size.
+
+```{r more-sample, echo=TRUE}
+sampling2 <- declare_sampling(n=300)
+design2 <- population + potential_outcomes + sampling2 +
+          assigning + revealing + estimand + dim + did
+```
+
+##diagnose_design()
+
+Diagnosing the design with twice the sample size
+
+```{r diagnosis2}
+diagnosis2 <- diagnose_design(design2, sims=5000)
+diagnosis2$diagnosands_df[,c(1,3,5,9,11)] %>%
+  kable()
+```
+
+
+## Looking under the hood, DIM
+
+```{r underhood-dim2, height=6}
+sim.out <- diagnosis2$simulations
+hist(sim.out$estimate[sim.out$estimator_label=="DIM"],
+     main="Randomization Distribution",
+     xlab="Estimates in Realized Experiments",
+     xlim=c(-60,70), cex=24)
+abline(v=5.5, lwd=3, col="red")
+```
+
+## Looking under the hood, DID
+
+```{r underhood-did2, height=6}
+sim.out <- diagnosis2$simulations
+hist(sim.out$estimate[sim.out$estimator_label=="DID"],
+     main="Randomization Distribution",
+     xlab="Estimates in Realized Experiments",
+     xlim=c(-60,70), cex=24)
+abline(v=5.5, lwd=3, col="red")
