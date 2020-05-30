@@ -34,7 +34,7 @@ population <- declare_population(
   household = add_level(N=30,
             tree_cover_ha=rtruncnorm(n=N, a=1, b=40, #household have an average of 21 ha of tree cover, with a sd of 8
                             mean=21, sd=8),
-    u=rnorm(n=N, mean=-12, sd=12)) #control group loses on average 10 ha of tree cover to deforestation
+    u=rnorm(n=N, mean=-12, sd=12)) #control group loses on average 10 ha of tree cover to deforestation. This was gotten by estimating the effect from preliminary results of the program along with research that says that deforestation outside the reserves was 12% faster. Furthermore 12 hectares was mentioned as a limit for shifting cultivation. 
 )
 
 #using DeclareDesign, we are simulating a population of 500 communities, each of which has 30 households, and each of those has a differenct level of tree-cover, measured in hectares, and a different amount of variability in that tree cover (the variable 'u'). 
@@ -183,7 +183,7 @@ diagnosis <- diagnose_design(design, sims=5000)
 diagnosis$diagnosands_df[,c(1,3,5,9,11)] %>%
   kable()
 
-#If the minimum treatment effect is 2 hectares, then there is a 99% chance that the analysis will find it, regardless of if we use a difference in difference or difference in means approach. We still however recommend a difference in difference approach as it compares the differences in before and after data for both treatment and control groups, therefore accounting for any other differences that there might be in the two groups. 
+#If the minimum treatment effect is 2 hectares, then there is a 99% chance that the analysis will find it, regardless of if we use a difference in difference or difference in means approach. We still however recommend a difference in difference approach as it compares the differences in before and after data for both treatment and control groups, therefore accounting for any other differences that there might be in the two groups. This is a lot of power so it would be better to lower the sample size to see if we can economize on the resources used for the evaluation. 
 ```
 
 
