@@ -150,7 +150,7 @@ estimand(po)
 
 ##declare_estimator()
 
-Next, we declare the estimators we use for recovering the estimand. While there are many advanced estimators, we'll focus on the two core experimental estimators:
+Next, we declare the estimators we use for recovering the estimand. We'll focus on the two core experimental estimators:
 1. difference-in-means
 2. difference-in-differences
 
@@ -208,7 +208,7 @@ hist(sim.out$estimate[sim.out$estimator_label=="DID"],
      xlim=c(-60,70), cex=24)
 abline(v=5.5, lwd=3, col="red")
 
-#PH: note that we get more power using the difference in differences estimation. This is because diff-in-diff increases the precision of our estimate of the ATE.
+#note that we get more power using the difference in differences estimation. This is because diff-in-diff increases the precision of our estimate of the ATE. Though in this case they are both pretty powerful
 ```
 
 ##modify_design()
