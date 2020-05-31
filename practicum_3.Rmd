@@ -48,7 +48,7 @@ population <- declare_population(
 
 ```{r population-see, echo=TRUE, fig.height=5.5}
 pop <- population()
-hist(pop[,2], xlab="Baseline Forest Cover (ha)", 
+hist(pop[,3], xlab="Baseline Forest Cover (ha)", 
      main="Baseline", cex=24)
 ```
 
