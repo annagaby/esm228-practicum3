@@ -1,0 +1,209 @@
+---
+title: "Practicum 3"
+author: "Eleonore Durand"
+date: "May 29, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+#load necessary packages
+
+library(DeclareDesign)
+library(knitr)
+library(ggplot2)
+library(kableExtra)
+library(dplyr)
+library(truncnorm) #for truncated distribution
+
+```
+
+
+##declare_population()
+
+This functions allows you to declare the characteristics of the population that you want to study.
+
+```{r population, echo=TRUE}
+set.seed(228)
+population <- declare_population(
+  community = add_level(N=500),
+  household = add_level(N=30,
+            tree_cover_ha=rtruncnorm(n=N, a=1, b=40, #household have an average of 21 ha of tree cover, with a sd of 8
+                            mean=21, sd=8),
+    u=rnorm(n=N, mean=-12, sd=12)) #control group loses on average 10 ha of tree cover to deforestation. This was gotten by estimating the effect from preliminary results of the program along with research that says that deforestation outside the reserves was 12% faster. Furthermore 12 hectares was mentioned as a limit for shifting cultivation. 
+)
+
+#using DeclareDesign, we are simulating a population of 500 communities, each of which has 30 households, and each of those has a differenct level of tree-cover, measured in hectares, and a different amount of variability in that tree cover (the variable 'u'). 
+
+```
+
+
+
+
+##Population descriptives
+
+```{r population-see, echo=TRUE, fig.height=5.5}
+pop <- population()
+hist(pop[,3], xlab="Baseline Forest Cover (ha)", 
+     main="Baseline", cex=24)
+```
+
+##declare_potential_outcomes()
+
+The next step is to declare the full schedule of potential outcomes $Y(1)$ and $Y(0)$ under an assumption about the effect size of interest.
+
+
+
+```{r po, echo=TRUE}
+
+te <- 2
+
+potential_outcomes <- 
+  declare_potential_outcomes(
+    Y_D_0=tree_cover_ha + u,
+    Y_D_1=tree_cover_ha + u + te)
+
+
+#we are setting the minimum treatment effect to 2, which while it is 16.67% difference from the control group, is the minimum effect hectare wise that the organization would want to see. We based this estimate by looking at the average deforestation in one of the sustainable development reserves, dividing it by the number of communities and number of households within a community.
+
+```
+
+
+##Potential outcomes descriptives
+
+```{r po-see, echo=TRUE}
+po <- potential_outcomes(pop)
+kable(po[1:5,], digits=1)
+
+#spot check that our definition of the unit-level treatment effect is true (subtract column 4 from column 5).
+```
+
+
+##declare_sampling()
+
+Next, we want to select the sample size. 
+
+```{r sample, echo=TRUE}
+sampling <- declare_sampling(clusters = community, n=120)
+sam <- sampling(po)
+kable(sam[1:5,c(1:2,4:6)], row.names = FALSE,
+      digits = 1)
+
+#we are doing a clustered sampling to avoid spillover. Out of 500 communities we are randomly selecting 120. Of those, households in a community will either all be assigned to treatment or control.
+
+
+```
+
+
+##declare_assignment()
+
+This step declares the random assignment process. There are many complexities, but let's stick to *complete assignment* of exactly half the units at this stage.
+
+```{r assign, echo=TRUE}
+assigning <- declare_assignment(prob = 1/2, clusters = community ,
+                  assignment_variable="D")
+assigned <- assigning(sam)
+kable(assigned[1:5,c(1:2,4:5,7:8)], 
+      digits = 1)
+
+#We are doing clustered random assignment, so we are randomly selecting half of the sampled communities for treatment (variable D), and the other half for control. In order to avoid spillover, a community is either all treatment or all control. 
+
+```
+
+
+## Assessing balance
+
+At this stage, it's possible to look at balance in the baseline tree cover characteristics, since random assignment has occured.
+
+```{r violin, echo=FALSE, fig.height=6}
+ggplot(data=assigned, aes(x=as.factor(D), y=tree_cover_ha)) +
+geom_violin(aes(fill=as.factor(D), color=as.factor(D))) +
+theme_minimal(base_size = 24) + xlab("Assignment")
+
+#random assignment has produced treatment and control groups that are essentially statistically-identical on all observed and unobserved features.
+
+
+```
+
+##declare_reveal()
+
+This step declares how the potential outcomes are revealed by the random assignment
+
+```{r reveal, echo=TRUE}
+revealing <- declare_reveal(assignment_variables=D)
+# this part of DeclareDesign essentially is telling R which PO to reveal for each unit as a function of its treatment assignment. 
+```
+
+##declare_estimand()
+
+At this stage, we specify our target *estimand*, which is the quantity that we are trying to recover when estimating impact. 
+
+```{r estimand, echo=TRUE}
+estimand <- declare_estimand(ATE = te ) # set ATE to 2 because that's the minimum effect we want to see 
+estimand(po)
+```
+
+
+##declare_estimator()
+
+Next, we declare the estimators we use for recovering the estimand. We'll focus on the two core experimental estimators:
+1. difference-in-means
+2. difference-in-differences
+
+```{r estimator, echo=TRUE}
+dim <- declare_estimator(Y ~ D, estimand = estimand,  
+          model =  difference_in_means, label = "DIM") #Difference-in-means (Mean of treatment group - mean of control group)
+
+did <- declare_estimator(Y - tree_cover_ha ~ D, 
+                         estimand = estimand,  
+          model =  difference_in_means, label = "DID") #Difference-in-differences ([Mean of treatment group @ endline - Mean of treatment group @ baseline] - [Mean of control group @ endline - mean of control group @ baseline])
+```
+
+
+##declare_design()
+
+This function brings all of the parts of the process together in a single design and allows for each part of the design to be simulated repeatedly.
+
+```{r design, echo=TRUE}
+design <- population + potential_outcomes + sampling +
+          assigning + revealing + estimand + dim + did
+```
+
+
+##diagnose_design()
+
+At this stage, we can calculate various features of the design that we have specified
+
+```{r diagnosis, cache=TRUE}
+diagnosis <- diagnose_design(design, sims=5000)
+diagnosis$diagnosands_df[,c(1,3,5,9,11)] %>%
+  kable()
+
+#If the minimum treatment effect is 2 hectares, then there is a 99% chance that the analysis will find it, regardless of if we use a difference in difference or difference in means approach. We still however recommend a difference in difference approach as it compares the differences in before and after data for both treatment and control groups, therefore accounting for any other differences that there might be in the two groups. This is a lot of power so it would be better to lower the sample size to see if we can economize on the resources used for the evaluation. 
+```
+
+
+##modify_design()
+
+That's a lot of power. Let's decrease the sample size to see if we can do a smaller evaluation and save on resources
+
+```{r more-sample, echo=TRUE}
+sampling2 <- declare_sampling(clusters = community, n=50)
+design2 <- population + potential_outcomes + sampling2 +
+          assigning + revealing + estimand + dim + did
+```
+
+##diagnose_design()
+
+Diagnosing the design with a lower sample size
+
+```{r diagnosis2}
+diagnosis2 <- diagnose_design(design2, sims=5000)
+diagnosis2$diagnosands_df[,c(1,3,5,9,11)] %>%
+  kable()
+```
+
